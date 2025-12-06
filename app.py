@@ -5,38 +5,59 @@ import numpy as np
 
 st.set_page_config(page_title="Violence Detection", layout="centered")
 
-st.title("🔍 Violence Detection App")
-st.write("Upload an image and the YOLO model will classify it (Violence / NonViolence).")
+st.title("🔍 Violence Detection Classifier")
+st.write("Upload an image and the model will predict whether it is **Violence** or **NonViolence**.")
 
 @st.cache_resource
 def load_model():
     # best.pt must be in the same folder as app.py
-    return YOLO("best.pt")
+    model = YOLO("best.pt")
+    # sanity print (2 classes)
+    print("Class names:", model.names)
+    return model
 
 model = load_model()
 
-uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png", "webp"])
 
 if uploaded is not None:
+    # Show original image
     img = Image.open(uploaded).convert("RGB")
     st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    # Convert PIL -> numpy array for YOLO
+    # Convert PIL -> numpy
     img_np = np.array(img)
 
-    # Run prediction
-    results = model.predict(img_np)
+    # Run prediction (classification)
+    results = model.predict(img_np, imgsz=224, verbose=False)
+    r = results[0]
 
-    # Render image with bounding boxes / labels
-    annotated = results[0].plot()  # returns a NumPy array
-    st.image(annotated, caption="Prediction", use_column_width=True)
+    # Get probabilities
+    if hasattr(r, "probs") and r.probs is not None:
+        probs = r.probs.data.cpu().numpy()  # shape: (num_classes,)
+        class_names = r.names               # dict: {0: 'NonViolence', 1: 'Violence'}
 
-    # Show class + confidence (for classification models)
-    if hasattr(results[0], "probs") and results[0].probs is not None:
-        probs = results[0].probs.data
-        class_id = int(np.argmax(probs))
-        conf = float(probs[class_id])
-        label = results[0].names[class_id]
-        st.subheader("Prediction")
-        st.write(f"**{label}** ({conf:.2f} confidence)")
+        # assume {0: NonViolence, 1: Violence} like we saw in Colab
+        non_violence_prob = float(probs[0])
+        violence_prob = float(probs[1])
+
+        # Decide label by threshold on violence probability
+        threshold = 0.5
+        if violence_prob >= threshold:
+            final_label = "Violence"
+        else:
+            final_label = "NonViolence"
+
+        # Show probabilities
+        st.subheader("Prediction probabilities")
+        st.write(f"**NonViolence:** {non_violence_prob:.3f}")
+        st.write(f"**Violence:** {violence_prob:.3f}")
+        st.write(f"**Decision (threshold = {threshold:.2f}):** **{final_label}**")
+
+    else:
+        st.error("Model did not return probabilities. Make sure this is a classification model (yolov8*-cls).")
+
+    # Show annotated image (YOLO overlay)
+    annotated = r.plot()  # numpy array with text overlay
+    st.image(annotated, caption="Model Output", use_column_width=True)
 
