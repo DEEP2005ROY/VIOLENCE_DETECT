@@ -1,22 +1,44 @@
 import streamlit as st
 from ultralytics import YOLO
 from PIL import Image
-import cv2
 import numpy as np
+import cv2
 
-st.title("Violence Detection App")
+st.set_page_config(page_title="Violence Detection", layout="centered")
 
-model = YOLO("best.pt")
+st.title("🔍 Violence Detection App")
+st.write("Upload an image and the YOLO model will classify it as Violence / NonViolence.")
 
-uploaded = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+@st.cache_resource
+def load_model():
+    model = YOLO("best.pt")    # Make sure best.pt is in same folder
+    return model
 
-if uploaded is not None:
+model = load_model()
+
+uploaded = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
+
+if uploaded:
     img = Image.open(uploaded)
     st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    # Predict
-    results = model.predict(img)
+    # Convert PIL → numpy
+    img_np = np.array(img)
 
-    # show annotated image
-    res_img = results[0].plot()  # NumPy array
-    st.image(res_img, caption="Prediction", use_column_width=True)
+    # Predict
+    results = model.predict(img_np)
+
+    # Render prediction
+    pred_img = results[0].plot()  # YOLO returns numpy array with boxes drawn
+
+    st.image(pred_img, caption="Prediction Result", use_column_width=True)
+
+    # Text prediction
+    probs = results[0].probs
+    if probs is not None:
+        st.subheader("Prediction:")
+        class_id = int(np.argmax(probs.data))
+        conf = float(probs.data[class_id])
+        label = results[0].names[class_id]
+        st.write(f"**{label}** ({conf:.2f} confidence)")
+
